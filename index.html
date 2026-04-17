@@ -1,0 +1,551 @@
+# Anysent
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>SendAny — Send files instantly</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,300&display=swap" rel="stylesheet"/>
+<script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+<script src="https://unpkg.com/qrcode@1.5.3/build/qrcode.min.js"></script>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #f0eeea;
+  --surface: #ffffff;
+  --border: #dddbd4;
+  --text: #1c1b18;
+  --muted: #8c8a84;
+  --green: #2d6a4f;
+  --green-bg: #d8f3dc;
+  --red: #b91c1c;
+  --mono: 'DM Mono', monospace;
+  --sans: 'DM Sans', sans-serif;
+}
+
+html, body { font-family: var(--sans); background: var(--bg); color: var(--text); min-height: 100vh; }
+body { display: flex; flex-direction: column; }
+
+/* NAV */
+nav {
+  padding: 18px 40px;
+  display: flex; align-items: center; justify-content: space-between;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+  position: sticky; top: 0; z-index: 20;
+}
+.logo { font-family: var(--mono); font-size: 15px; font-weight: 500; color: var(--text); text-decoration: none; letter-spacing: -0.02em; }
+.logo span { color: var(--muted); }
+.nav-links { display: flex; gap: 24px; align-items: center; }
+.nav-links a { font-size: 13px; color: var(--muted); text-decoration: none; transition: color 0.15s; }
+.nav-links a:hover { color: var(--text); }
+.btn-signin { font-size: 12px; font-weight: 500; background: var(--text); color: var(--bg); border: none; border-radius: 6px; padding: 6px 14px; cursor: pointer; text-decoration: none; transition: opacity 0.15s; }
+.btn-signin:hover { opacity: 0.75; }
+
+/* HERO */
+.hero {
+  text-align: center;
+  padding: 56px 24px 44px;
+  border-bottom: 1px solid var(--border);
+}
+.hero h1 { font-size: clamp(26px, 4vw, 38px); font-weight: 300; letter-spacing: -0.03em; margin-bottom: 10px; line-height: 1.2; }
+.hero h1 em { font-style: italic; font-weight: 300; }
+.hero p { font-size: 14px; color: var(--muted); max-width: 400px; margin: 0 auto; line-height: 1.6; }
+
+/* STATUS */
+.status-bar {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 9px 40px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  font-family: var(--mono); font-size: 11px; color: var(--muted);
+}
+.s-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--border); transition: background 0.4s; flex-shrink: 0; }
+.s-dot.live { background: #22c55e; box-shadow: 0 0 0 3px #22c55e22; }
+.s-id {
+  cursor: pointer; color: var(--text);
+  padding: 2px 8px; border: 1px solid var(--border); border-radius: 4px;
+  background: var(--bg); transition: background 0.15s; user-select: all; margin-left: 4px;
+}
+.s-id:hover { background: var(--border); }
+
+/* MAIN LAYOUT */
+main {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  gap: 48px;
+  max-width: 920px;
+  margin: 0 auto;
+  width: 100%;
+  padding: 40px 28px;
+  align-items: start;
+}
+
+/* LEFT PANEL */
+.panel-title { font-size: 18px; font-weight: 400; margin-bottom: 14px; letter-spacing: -0.02em; }
+
+.drop-zone {
+  border: 2px dashed var(--border);
+  border-radius: 10px;
+  padding: 48px 20px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+  background: var(--surface);
+}
+.drop-zone:hover, .drop-zone.hover { border-color: var(--text); background: #fafaf8; }
+.drop-zone.dropping { border-color: var(--green); background: var(--green-bg); }
+.drop-zone input { display: none; }
+.drop-icon { font-size: 26px; margin-bottom: 12px; display: block; opacity: 0.35; }
+.drop-text { font-size: 13px; color: var(--muted); line-height: 1.6; }
+
+/* FILE LIST */
+.shared-header { font-size: 18px; font-weight: 400; margin-bottom: 14px; letter-spacing: -0.02em; }
+.file-list { display: flex; flex-direction: column; gap: 6px; }
+.empty-state { font-size: 13px; color: var(--muted); padding: 4px 0; font-style: italic; }
+
+/* FILE ITEM */
+.file-item {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  animation: slideIn 0.22s ease both;
+}
+@keyframes slideIn { from { opacity:0; transform: translateY(5px); } to { opacity:1; transform: translateY(0); } }
+
+.file-progress { height: 2px; background: var(--bg); }
+.file-prog-fill { height: 100%; background: #6366f1; width: 0%; transition: width 0.15s; }
+.file-prog-fill.done { background: var(--green); width: 100%; }
+
+.file-row {
+  display: flex; align-items: center; flex-wrap: wrap;
+  padding: 11px 14px; gap: 10px;
+}
+.file-info { flex: 1; min-width: 0; }
+.file-fname {
+  font-size: 13px; font-weight: 500;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  color: var(--text); margin-bottom: 1px;
+}
+.file-sz-row { display: flex; align-items: center; gap: 8px; }
+.file-sz { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+.dl-count { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+
+.file-btns { display: flex; gap: 3px; flex-shrink: 0; flex-wrap: wrap; }
+.fa-btn {
+  font-size: 11px; font-family: var(--mono);
+  background: var(--bg); color: var(--text);
+  border: 1px solid var(--border); border-radius: 5px;
+  padding: 4px 10px; cursor: pointer; width: auto;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+  white-space: nowrap; line-height: 1;
+}
+.fa-btn:hover { background: var(--text); color: var(--bg); border-color: var(--text); }
+.fa-btn.del:hover { background: var(--red); color: white; border-color: var(--red); }
+.fa-btn.ok { background: var(--green); color: white; border-color: var(--green); }
+
+/* Expandable rows */
+.url-row {
+  border-top: 1px solid var(--border);
+  padding: 8px 14px;
+  background: #fafaf8;
+  display: none; align-items: center; gap: 10px;
+}
+.url-row.show { display: flex; }
+.url-link {
+  font-family: var(--mono); font-size: 11px; color: #1d4ed8;
+  text-decoration: none; flex: 1; min-width: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.url-link:hover { text-decoration: underline; }
+
+.qr-row {
+  border-top: 1px solid var(--border);
+  padding: 16px 14px;
+  background: #fafaf8;
+  display: none; flex-direction: column; align-items: center; gap: 8px;
+}
+.qr-row.show { display: flex; }
+.qr-label { font-family: var(--mono); font-size: 10px; color: var(--muted); }
+
+/* CURL SECTION */
+.curl-section { margin-top: 24px; }
+.curl-title { font-size: 11px; font-weight: 500; color: var(--muted); text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 8px; font-family: var(--mono); }
+.curl-box { background: #1a1917; border-radius: 8px; overflow: hidden; border: 1px solid #2e2c29; }
+.curl-tabs-row { display: flex; align-items: center; justify-content: space-between; padding: 0 14px; border-bottom: 1px solid #2e2c29; }
+.curl-tabs { display: flex; gap: 2px; padding: 7px 0; }
+.c-tab { font-family: var(--mono); font-size: 10px; color: #6b6a66; background: none; border: 1px solid transparent; border-radius: 4px; padding: 3px 9px; cursor: pointer; width: auto; transition: all 0.12s; }
+.c-tab.active { color: #e8e6e0; border-color: #3a3835; background: #2a2825; }
+.c-tab:hover:not(.active) { color: #9c9a94; }
+.curl-live { font-family: var(--mono); font-size: 10px; color: #22c55e; display: flex; align-items: center; gap: 5px; }
+.curl-live::before { content:''; display:inline-block; width:5px; height:5px; border-radius:50%; background:#22c55e; }
+.curl-body { padding: 13px 16px; }
+.curl-cmd { font-family: var(--mono); font-size: 12px; color: #e8e6e0; line-height: 1.75; white-space: pre-wrap; word-break: break-all; }
+.cg { color: #86efac; } .cb { color: #93c5fd; } .cy { color: #fde68a; } .cm { color: #6b6a66; }
+.curl-foot { padding: 7px 14px; border-top: 1px solid #2e2c29; display: flex; justify-content: flex-end; }
+.btn-cpcurl { font-family: var(--mono); font-size: 11px; background: #2a2825; color: #9c9a94; border: 1px solid #3a3835; border-radius: 5px; padding: 4px 12px; cursor: pointer; width: auto; transition: all 0.12s; }
+.btn-cpcurl:hover { background: #343230; color: #e8e6e0; }
+.btn-cpcurl.ok { color: #86efac; border-color: #2d6a4f; }
+
+/* TOAST */
+.toast {
+  position: fixed; bottom: 24px; left: 50%;
+  transform: translateX(-50%) translateY(90px);
+  background: var(--text); color: var(--bg);
+  border-radius: 10px; padding: 12px 20px;
+  font-size: 13px; min-width: 260px; max-width: 380px;
+  transition: transform 0.3s cubic-bezier(0.34,1.56,0.64,1); z-index: 100;
+}
+.toast.show { transform: translateX(-50%) translateY(0); }
+.t-title { font-weight: 500; margin-bottom: 2px; }
+.t-sub { font-size: 11px; opacity: 0.55; font-family: var(--mono); }
+.t-pg { height: 2px; background: rgba(255,255,255,0.18); border-radius: 99px; margin-top: 8px; overflow: hidden; }
+.t-bar { height: 100%; background: #22c55e; width: 0%; transition: width 0.15s; }
+
+footer {
+  border-top: 1px solid var(--border); padding: 16px 40px;
+  display: flex; justify-content: space-between; align-items: center;
+}
+footer span { font-size: 12px; color: var(--muted); font-family: var(--mono); }
+footer a { color: var(--muted); text-decoration: none; }
+footer a:hover { color: var(--text); }
+
+@keyframes fadeUp { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
+.anim { animation: fadeUp 0.3s ease both; }
+.d1 { animation-delay: 0.05s; } .d2 { animation-delay: 0.1s; } .d3 { animation-delay: 0.15s; }
+
+@media (max-width: 620px) {
+  main { grid-template-columns: 1fr; gap: 28px; padding: 24px 16px; }
+  nav { padding: 14px 20px; }
+  .hero { padding: 36px 20px 32px; }
+  footer { flex-direction: column; gap: 6px; padding: 14px 20px; }
+  .file-btns { gap: 4px; }
+}
+</style>
+</head>
+<body>
+
+<nav>
+  <a href="#" class="logo">send<span>any</span></a>
+  <div class="nav-links">
+    <a href="#">how it works</a>
+    <a href="#" class="btn-signin">Sign in</a>
+  </div>
+</nav>
+
+<div class="hero anim">
+  <h1>Send files <em>directly,</em> with ease.</h1>
+  <p>Drop a file to get a shareable link instantly. No signup. Files live only while this tab is open.</p>
+</div>
+
+<div class="status-bar anim d1" id="status-bar">
+  <div class="s-dot" id="s-dot"></div>
+  <span id="s-text">connecting...</span>
+  <span id="s-id-wrap" style="display:none">· your id:<span class="s-id" id="s-id" title="click to copy">—</span></span>
+</div>
+
+<main>
+  <!-- LEFT -->
+  <div class="anim d2">
+    <h2 class="panel-title">Add a file</h2>
+    <div class="drop-zone" id="drop-zone">
+      <input type="file" id="file-input" multiple/>
+      <span class="drop-icon">↑</span>
+      <p class="drop-text">Drag &amp; drop to share a file<br>(or click here)</p>
+    </div>
+  </div>
+
+  <!-- RIGHT -->
+  <div class="anim d3">
+    <h2 class="shared-header">Shared files</h2>
+    <div class="file-list" id="file-list">
+      <p class="empty-state" id="empty-msg">No files have been added yet</p>
+    </div>
+
+    <!-- Terminal -->
+    <div class="curl-section" id="curl-section" style="display:none">
+      <div class="curl-title">terminal</div>
+      <div class="curl-box">
+        <div class="curl-tabs-row">
+          <div class="curl-tabs">
+            <button class="c-tab active" id="tab-dl" onclick="switchCurlTab('dl')">download</button>
+            <button class="c-tab" id="tab-ul" onclick="switchCurlTab('ul')">upload</button>
+          </div>
+          <span class="curl-live">live</span>
+        </div>
+        <div class="curl-body"><div class="curl-cmd" id="curl-cmd"></div></div>
+        <div class="curl-foot">
+          <button class="btn-cpcurl" id="btn-cpcurl" onclick="copyCurl()">copy</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<footer>
+  <span>© 2025 sendany</span>
+  <span><a href="#">privacy</a> · <a href="#">terms</a></span>
+</footer>
+
+<div class="toast" id="toast">
+  <div class="t-title" id="t-title">Receiving...</div>
+  <div class="t-sub" id="t-sub"></div>
+  <div class="t-pg"><div class="t-bar" id="t-bar"></div></div>
+</div>
+
+<script>
+// ── State ──────────────────────────────────────
+let peer, inConn;
+let rxBufs = [], rxSize = 0, rxMeta = null;
+const files = [];   // { id, file, dlCount }
+let curlTab = 'dl', curlText = '';
+
+// ── DOM ────────────────────────────────────────
+const sDot    = document.getElementById('s-dot');
+const sText   = document.getElementById('s-text');
+const sIdWrap = document.getElementById('s-id-wrap');
+const sId     = document.getElementById('s-id');
+const dropZ   = document.getElementById('drop-zone');
+const fileIn  = document.getElementById('file-input');
+const fileList= document.getElementById('file-list');
+const emptyMsg= document.getElementById('empty-msg');
+const curlSec = document.getElementById('curl-section');
+const curlCmd = document.getElementById('curl-cmd');
+const toast   = document.getElementById('toast');
+const tTitle  = document.getElementById('t-title');
+const tSub    = document.getElementById('t-sub');
+const tBar    = document.getElementById('t-bar');
+
+// ── Helpers ────────────────────────────────────
+const fmtSize = b => b < 1024 ? b+' B' : b < 1<<20 ? (b/1024).toFixed(1)+' KB' : b < 1<<30 ? (b/(1<<20)).toFixed(1)+' MB' : (b/(1<<30)).toFixed(2)+' GB';
+
+function fIcon(name) {
+  const e = (name.split('.').pop()||'').toLowerCase();
+  return ({pdf:'📑',zip:'🗜',gz:'🗜',tar:'🗜',png:'🖼',jpg:'🖼',jpeg:'🖼',gif:'🖼',webp:'🖼',svg:'🖼',mp4:'🎬',mov:'🎬',mp3:'🎵',wav:'🎵',doc:'📝',docx:'📝',xls:'📊',xlsx:'📊',csv:'📊',txt:'📄',md:'📄',js:'💾',ts:'💾',py:'💾',go:'💾',sh:'💾',html:'💾',css:'💾'})[e] || '📄';
+}
+
+function shareUrl(id) {
+  return window.location.href.split('?')[0] + '?rx=' + (peer ? peer.id : '') + '&f=' + id;
+}
+
+// ── PeerJS ─────────────────────────────────────
+peer = new Peer();
+
+peer.on('open', id => {
+  sDot.classList.add('live');
+  sText.textContent = 'online · ready';
+  sIdWrap.style.display = 'inline';
+  sId.textContent = id;
+  renderCurl();
+  handleUrlParams();
+});
+
+peer.on('error', e => sText.textContent = 'error: ' + e.message);
+
+sId.addEventListener('click', () => {
+  navigator.clipboard.writeText(peer.id).then(() => {
+    const orig = sId.textContent;
+    sId.textContent = 'copied!';
+    setTimeout(() => { sId.textContent = orig; }, 1400);
+  });
+});
+
+// incoming connections (someone opened share URL)
+peer.on('connection', c => {
+  c.on('data', req => {
+    if (req.type === 'req') {
+      const entry = files.find(f => f.id === req.fid);
+      if (entry) sendViaConn(c, entry);
+    }
+  });
+  // also handle bare incoming file push
+  c.on('data', data => {
+    if (data.type === 'meta') startReceive(data, c);
+    else if (data.type === 'chunk') { rxBufs.push(data.buf); rxSize += data.buf.byteLength; tBar.style.width = Math.round(rxSize/rxMeta.size*100)+'%'; }
+    else if (data.type === 'done') finishReceive();
+  });
+});
+
+function startReceive(meta, c) {
+  rxMeta = meta; rxBufs = []; rxSize = 0;
+  tTitle.textContent = 'Receiving ' + meta.name;
+  tSub.textContent = fmtSize(meta.size);
+  tBar.style.width = '0%'; tBar.style.background = '#6366f1';
+  toast.classList.add('show');
+}
+
+function finishReceive() {
+  const blob = new Blob(rxBufs, { type: rxMeta.mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = rxMeta.name; a.click();
+  tBar.style.width = '100%'; tBar.style.background = '#22c55e';
+  tTitle.textContent = 'Saved: ' + rxMeta.name;
+  setTimeout(() => toast.classList.remove('show'), 3200);
+  const entry = files.find(f => f.file.name === rxMeta.name);
+  if (entry) { entry.dlCount++; refreshCount(entry.id); }
+}
+
+// ── Drop zone ──────────────────────────────────
+dropZ.addEventListener('click', () => fileIn.click());
+fileIn.addEventListener('change', () => { [...fileIn.files].forEach(addFile); fileIn.value = ''; });
+dropZ.addEventListener('dragover', e => { e.preventDefault(); dropZ.classList.add('hover'); });
+dropZ.addEventListener('dragleave', () => dropZ.classList.remove('hover'));
+dropZ.addEventListener('drop', e => { e.preventDefault(); dropZ.classList.remove('hover'); [...e.dataTransfer.files].forEach(addFile); });
+
+// ── Add file ───────────────────────────────────
+function addFile(file) {
+  const id = 'f' + Date.now().toString(36) + Math.random().toString(36).slice(2,5);
+  const entry = { id, file, dlCount: 0 };
+  files.push(entry);
+  emptyMsg.style.display = 'none';
+  curlSec.style.display = 'block';
+
+  const url = shareUrl(id);
+  const div = document.createElement('div');
+  div.className = 'file-item'; div.id = 'item-' + id;
+  div.innerHTML = `
+    <div class="file-progress"><div class="file-prog-fill" id="pg-${id}"></div></div>
+    <div class="file-row">
+      <div class="file-info">
+        <div class="file-fname">${fIcon(file.name)} ${escHtml(file.name)}</div>
+        <div class="file-sz-row">
+          <span class="file-sz">${fmtSize(file.size)}</span>
+          <span class="dl-count" id="dc-${id}">(0 downloads)</span>
+        </div>
+      </div>
+      <div class="file-btns">
+        <button class="fa-btn" onclick="toggleQR('${id}')">QR</button>
+        <button class="fa-btn" onclick="toggleUrl('${id}')">share URL</button>
+        <button class="fa-btn" id="cpb-${id}" onclick="copyFileUrl('${id}')">copy URL</button>
+        <button class="fa-btn del" onclick="removeFile('${id}')">delete</button>
+      </div>
+    </div>
+    <div class="url-row" id="urlrow-${id}">
+      <a class="url-link" href="${url}" target="_blank">${url}</a>
+    </div>
+    <div class="qr-row" id="qrrow-${id}">
+      <canvas id="qrc-${id}"></canvas>
+      <span class="qr-label">scan to download</span>
+    </div>
+  `;
+  fileList.appendChild(div);
+  renderCurl(url, file.name);
+}
+
+function escHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function refreshCount(id) {
+  const e = files.find(f => f.id === id);
+  const el = document.getElementById('dc-' + id);
+  if (e && el) el.textContent = '(' + e.dlCount + ' download' + (e.dlCount !== 1 ? 's' : '') + ')';
+}
+
+function removeFile(id) {
+  const idx = files.findIndex(f => f.id === id);
+  if (idx !== -1) files.splice(idx, 1);
+  document.getElementById('item-' + id)?.remove();
+  if (files.length === 0) { emptyMsg.style.display = ''; curlSec.style.display = 'none'; renderCurl(); }
+  else renderCurl();
+}
+
+function toggleUrl(id) {
+  const row = document.getElementById('urlrow-' + id);
+  row.classList.toggle('show');
+}
+
+function toggleQR(id) {
+  const row = document.getElementById('qrrow-' + id);
+  const wasOpen = row.classList.contains('show');
+  document.querySelectorAll('.qr-row').forEach(r => r.classList.remove('show'));
+  if (!wasOpen) {
+    row.classList.add('show');
+    const canvas = document.getElementById('qrc-' + id);
+    if (!canvas.dataset.drawn) {
+      QRCode.toCanvas(canvas, shareUrl(id), { width: 160, margin: 1, color: { dark:'#1c1b18', light:'#fafaf8' } });
+      canvas.dataset.drawn = '1';
+    }
+  }
+}
+
+function copyFileUrl(id) {
+  const btn = document.getElementById('cpb-' + id);
+  navigator.clipboard.writeText(shareUrl(id)).then(() => {
+    btn.textContent = 'copied!'; btn.classList.add('ok');
+    setTimeout(() => { btn.textContent = 'copy URL'; btn.classList.remove('ok'); }, 1800);
+  });
+}
+
+// ── Send file over DataChannel ─────────────────
+function sendViaConn(c, entry) {
+  const file = entry.file;
+  const CHUNK = 64 * 1024;
+  const pg = document.getElementById('pg-' + entry.id);
+  c.send({ type: 'meta', name: file.name, size: file.size, mime: file.type });
+  const reader = new FileReader();
+  let offset = 0;
+  function next() { reader.readAsArrayBuffer(file.slice(offset, offset + CHUNK)); }
+  reader.onload = ev => {
+    c.send({ type: 'chunk', buf: ev.target.result });
+    offset += ev.target.result.byteLength;
+    if (pg) pg.style.width = Math.round(offset/file.size*100) + '%';
+    if (offset < file.size) { next(); }
+    else {
+      c.send({ type: 'done' });
+      if (pg) pg.classList.add('done');
+      entry.dlCount++; refreshCount(entry.id);
+    }
+  };
+  next();
+}
+
+// ── Handle ?rx=&f= params (receiver side) ──────
+function handleUrlParams() {
+  const p = new URLSearchParams(window.location.search);
+  const senderId = p.get('rx'), fid = p.get('f');
+  if (!senderId || !fid) return;
+  tTitle.textContent = 'Connecting...'; tSub.textContent = ''; tBar.style.width = '0%';
+  toast.classList.add('show');
+  const c = peer.connect(senderId, { reliable: true });
+  c.on('open', () => { c.send({ type: 'req', fid }); });
+  c.on('data', data => {
+    if (data.type === 'meta') startReceive(data, c);
+    else if (data.type === 'chunk') { rxBufs.push(data.buf); rxSize += data.buf.byteLength; tBar.style.width = Math.round(rxSize/rxMeta.size*100)+'%'; }
+    else if (data.type === 'done') finishReceive();
+  });
+}
+
+// ── Curl box ───────────────────────────────────
+function switchCurlTab(tab) {
+  curlTab = tab;
+  document.getElementById('tab-dl').classList.toggle('active', tab === 'dl');
+  document.getElementById('tab-ul').classList.toggle('active', tab === 'ul');
+  renderCurl();
+}
+
+function renderCurl(overUrl, overName) {
+  const last = files[files.length - 1];
+  const url = overUrl || (last ? shareUrl(last.id) : window.location.href.split('?')[0] + '?rx=YOUR_ID&f=FILE_ID');
+  const fname = overName || (last ? last.file.name : 'file.txt');
+  if (curlTab === 'dl') {
+    curlCmd.innerHTML = '<span class="cm"># download via share link</span>\n<span class="cg">curl</span> -s -L -J -O \\\n  <span class="cy">"' + url + '"</span>';
+    curlText = 'curl -s -L -J -O "' + url + '"';
+  } else {
+    curlCmd.innerHTML = '<span class="cm"># send file from terminal</span>\n<span class="cg">curl</span> -T <span class="cb">' + fname + '</span> \\\n  <span class="cy">"' + url + '"</span>';
+    curlText = 'curl -T ' + fname + ' "' + url + '"';
+  }
+}
+
+function copyCurl() {
+  const btn = document.getElementById('btn-cpcurl');
+  navigator.clipboard.writeText(curlText).then(() => {
+    btn.textContent = 'copied!'; btn.classList.add('ok');
+    setTimeout(() => { btn.textContent = 'copy'; btn.classList.remove('ok'); }, 1800);
+  });
+}
+</script>
+</body>
+</html>
